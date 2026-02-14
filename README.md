@@ -39,12 +39,17 @@ ssh tictactoe.example.com
    ```
    *(Alternatively, export them as system environment variables)*.
 
-3. **Run**:
+3. **Build**
+   ```bash
+   make build
+   ```
+
+4. **Run**:
    ```bash
    make run
    ```
 
-4. **Connect**:
+5. **Connect**:
    ```bash
    ssh -p 2324 localhost
    ```
