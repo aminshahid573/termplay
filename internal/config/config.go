@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 var (
@@ -15,6 +17,9 @@ var (
 )
 
 func init() {
+	// Load .env file if present
+	_ = godotenv.Load()
+
 	if v := os.Getenv("FIREBASE_DB_URL"); v != "" {
 		DBURL = v
 	}

@@ -32,11 +32,12 @@ ssh tictactoe.example.com
    - **Important**: This file contains secrets! Never commit it. (It is already `.gitignore`d).
 
 2. **Configure Environment**:
-   ```bash
-   # Replace with your actual DB URL (from Firebase Console > Realtime Database)
-   export FIREBASE_DB_URL="https://YOUR-PROJECT-ID-default-rtdb.firebaseio.com"
-   export GOOGLE_APPLICATION_CREDENTIALS="./serviceAccount.json"
+   Create a `.env` file in the project root:
+   ```env
+   FIREBASE_DB_URL=https://YOUR-PROJECT-ID-default-rtdb.firebaseio.com
+   GOOGLE_APPLICATION_CREDENTIALS=./serviceAccount.json
    ```
+   *(Alternatively, export them as system environment variables)*.
 
 3. **Run**:
    ```bash
