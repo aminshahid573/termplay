@@ -19,14 +19,31 @@ type errMsg error
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// 1. Handle background polling (Highest Priority, Non-Blocking)
+	if roomMsg, ok := msg.(roomUpdateMsg); ok {
+		m.Game = db.Room(roomMsg)
+		// Auto-transition from Lobby to Game
+		if m.State == StateLobby && m.Game.PlayerO != "" {
+			m.State = StateGame
+		}
+		// Room deleted?
+		if m.Game.PlayerX == "" {
+			m.Err = nil
+			m.State = StateMenu
+			m.RoomCode = ""
+			return m, nil
+		}
+		return m, pollCmd(m.RoomCode)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
-			// If we are in a game and hosting, we might want to clean up, 
-			// but usually Wish handles the connection drop. 
+			// If we are in a game and hosting, we might want to clean up,
+			// but usually Wish handles the connection drop.
 			// Explicit quit here is fine.
 			return m, tea.Quit
 		}
@@ -36,20 +53,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.PopupActive {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
-			switch msg.String() {
-			case "y", "enter":
-				// Confirm Leave
-				isHost := (m.MySide == "X")
-				if m.RoomCode != "" {
-					db.LeaveRoom(m.RoomCode, m.SessionID, isHost)
+			if m.PopupType == PopupRestart {
+				switch msg.String() {
+				case "1":
+					// Random
+					next := "X"
+					if rand.Intn(2) == 0 {
+						next = "O"
+					}
+					m.PopupActive = false
+					return m, func() tea.Msg {
+						db.RestartGame(m.RoomCode, next)
+						return nil
+					}
+				case "2":
+					// Winner
+					next := m.Game.Winner
+					if next == "" {
+						// If draw, Random
+						if rand.Intn(2) == 0 {
+							next = "O"
+						} else {
+							next = "X"
+						}
+					}
+					m.PopupActive = false
+					return m, func() tea.Msg {
+						db.RestartGame(m.RoomCode, next)
+						return nil
+					}
+				case "esc":
+					m.PopupActive = false
 				}
-				m.PopupActive = false
-				m.State = StateMenu
-				m.Err = nil
-				m.RoomCode = "" // Clear room code on exit
-				return m, nil
-			case "n", "esc":
-				m.PopupActive = false
+			} else {
+				// Leave Popup
+				switch msg.String() {
+				case "y", "enter":
+					// Confirm Leave
+					isHost := (m.MySide == "X")
+					if m.RoomCode != "" {
+						db.LeaveRoom(m.RoomCode, m.SessionID, isHost)
+					}
+					m.PopupActive = false
+					m.State = StateMenu
+					m.Err = nil
+					m.RoomCode = "" // Clear room code on exit
+					return m, nil
+				case "n", "esc":
+					m.PopupActive = false
+				}
 			}
 		}
 		return m, nil
@@ -144,6 +196,12 @@ func updateCreateConfig(m Model, msg tea.Msg) (Model, tea.Cmd) {
 				m.Err = err
 				return m, nil
 			}
+
+			m.Cleanup.Mu.Lock()
+			m.Cleanup.RoomCode = code
+			m.Cleanup.IsHost = true
+			m.Cleanup.Mu.Unlock()
+
 			m.State = StateLobby
 			return m, pollCmd(code)
 		case "esc":
@@ -164,7 +222,26 @@ func updateCodeInput(m Model, msg tea.Msg) (Model, tea.Cmd) {
 				m.Err = err // Display error in view
 			} else {
 				m.RoomCode = code
-				m.MySide = "O"
+
+				// Determine role immediately
+				r, _ := db.GetRoom(code)
+				if r != nil {
+					if r.PlayerO == m.SessionID {
+						m.MySide = "O"
+					} else if r.PlayerX == m.SessionID {
+						m.MySide = "X"
+					} else {
+						m.MySide = "Spectator"
+					}
+				} else {
+					m.MySide = "O"
+				}
+
+				m.Cleanup.Mu.Lock()
+				m.Cleanup.RoomCode = code
+				m.Cleanup.IsHost = (m.MySide == "X")
+				m.Cleanup.Mu.Unlock()
+
 				m.State = StateGame
 				return m, pollCmd(code)
 			}
@@ -185,7 +262,7 @@ func updatePublicList(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	getSortedList := func() []db.Room {
 		var open, full []db.Room
 		filter := strings.ToUpper(m.SearchInput.Value())
-		
+
 		for _, r := range m.PublicRooms {
 			// Show all if filter empty, otherwise match
 			if filter == "" || strings.Contains(r.Code, filter) || strings.Contains(strings.ToUpper(r.PlayerXName), filter) {
@@ -204,7 +281,7 @@ func updatePublicList(m Model, msg tea.Msg) (Model, tea.Cmd) {
 		m.PublicRooms = []db.Room(msg)
 		// Clear previous errors if fetch succeeded
 		if m.Err != nil {
-			// Check if error was related to fetching? 
+			// Check if error was related to fetching?
 			// For simplicity, just clear it so UI looks clean
 			m.Err = nil
 		}
@@ -214,23 +291,44 @@ func updatePublicList(m Model, msg tea.Msg) (Model, tea.Cmd) {
 		case "esc":
 			m.State = StateMenu
 		case "up", "shift+tab":
-			if m.ListSelectedRow > 0 { m.ListSelectedRow-- }
+			if m.ListSelectedRow > 0 {
+				m.ListSelectedRow--
+			}
 		case "down", "tab":
 			list := getSortedList()
-			if m.ListSelectedRow < len(list)-1 { m.ListSelectedRow++ }
+			if m.ListSelectedRow < len(list)-1 {
+				m.ListSelectedRow++
+			}
 		case "enter":
 			list := getSortedList()
 			if len(list) > 0 && m.ListSelectedRow < len(list) {
 				sel := list[m.ListSelectedRow]
-				if sel.PlayerO == "" {
-					if err := db.JoinRoom(sel.Code, m.SessionID, m.MyName); err != nil {
-						m.Err = err
+				if err := db.JoinRoom(sel.Code, m.SessionID, m.MyName); err != nil {
+					m.Err = err
+				} else {
+					m.RoomCode = sel.Code
+
+					// Determine role
+					r, _ := db.GetRoom(sel.Code)
+					if r != nil {
+						if r.PlayerO == m.SessionID {
+							m.MySide = "O"
+						} else if r.PlayerX == m.SessionID {
+							m.MySide = "X"
+						} else {
+							m.MySide = "Spectator"
+						}
 					} else {
-						m.RoomCode = sel.Code
-						m.MySide = "O"
-						m.State = StateGame
-						return m, pollCmd(sel.Code)
+						m.MySide = "Spectator"
 					}
+
+					m.Cleanup.Mu.Lock()
+					m.Cleanup.RoomCode = sel.Code
+					m.Cleanup.IsHost = (m.MySide == "X")
+					m.Cleanup.Mu.Unlock()
+
+					m.State = StateGame
+					return m, pollCmd(sel.Code)
 				}
 			}
 		}
@@ -241,45 +339,48 @@ func updatePublicList(m Model, msg tea.Msg) (Model, tea.Cmd) {
 
 func updateGame(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case roomUpdateMsg:
-		m.Game = db.Room(msg)
-		if m.State == StateLobby && m.Game.PlayerO != "" {
-			m.State = StateGame
-		}
-		if m.Game.PlayerX == "" {
-			m.Err = nil
-			m.State = StateMenu
-			m.RoomCode = ""
-			return m, nil
-		}
-		return m, pollCmd(m.RoomCode)
-
 	case tea.KeyMsg:
 		if msg.String() == "q" || msg.String() == "esc" {
 			m.PopupActive = true
+			m.PopupType = PopupLeave
 			return m, nil
 		}
 		if m.Game.Status == "finished" {
 			if msg.String() == "r" {
-				return m, func() tea.Msg {
-					db.RestartGame(m.RoomCode)
-					return nil
+				if m.MySide == "Spectator" {
+					return m, nil
 				}
+				m.PopupActive = true
+				m.PopupType = PopupRestart
+				return m, nil
 			}
 			return m, nil
 		}
-		if m.Game.Status == "waiting" { return m, nil }
+		if m.Game.Status == "waiting" {
+			return m, nil
+		}
 
 		switch msg.String() {
 		case "up", "k":
-			if m.CursorR > 0 { m.CursorR-- }
+			if m.CursorR > 0 {
+				m.CursorR--
+			}
 		case "down", "j":
-			if m.CursorR < 2 { m.CursorR++ }
+			if m.CursorR < 2 {
+				m.CursorR++
+			}
 		case "left", "h":
-			if m.CursorC > 0 { m.CursorC-- }
+			if m.CursorC > 0 {
+				m.CursorC--
+			}
 		case "right", "l":
-			if m.CursorC < 2 { m.CursorC++ }
+			if m.CursorC < 2 {
+				m.CursorC++
+			}
 		case " ", "enter":
+			if m.MySide == "Spectator" {
+				return m, nil
+			}
 			idx := m.CursorR*3 + m.CursorC
 			if m.Game.Turn == m.MySide && m.Game.Board[idx] == " " {
 				return m, func() tea.Msg {
@@ -295,7 +396,9 @@ func updateGame(m Model, msg tea.Msg) (Model, tea.Cmd) {
 func pollCmd(code string) tea.Cmd {
 	return tea.Tick(time.Millisecond*200, func(t time.Time) tea.Msg {
 		r, err := db.GetRoom(code)
-		if err != nil || r == nil { return roomUpdateMsg{} }
+		if err != nil || r == nil {
+			return roomUpdateMsg{}
+		}
 		return roomUpdateMsg(*r)
 	})
 }
@@ -314,6 +417,8 @@ func fetchPublicRoomsCmd() tea.Cmd {
 func generateCode() string {
 	chars := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	b := make([]byte, 4)
-	for i := range b { b[i] = chars[rand.Intn(len(chars))] }
+	for i := range b {
+		b[i] = chars[rand.Intn(len(chars))]
+	}
 	return string(b)
 }

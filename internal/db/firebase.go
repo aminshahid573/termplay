@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"tictactoe-ssh/internal/config"
 	"tictactoe-ssh/internal/game"
@@ -15,44 +16,52 @@ import (
 
 // Room is the clean, strict structure used by the Game UI
 type Room struct {
-	Code        string    `json:"code"`
-	Board       [9]string `json:"board"`
-	Turn        string    `json:"turn"`
-	PlayerX     string    `json:"playerX"`
-	PlayerO     string    `json:"playerO"`
-	PlayerXName string    `json:"playerXName"`
-	PlayerOName string    `json:"playerOName"`
-	IsPublic    bool      `json:"isPublic"`
-	Winner      string    `json:"winner"`
-	WinningLine []int     `json:"winningLine"`
-	Status      string    `json:"status"`
-	WinsX       int       `json:"winsX"`
-	WinsO       int       `json:"winsO"`
+	Code        string            `json:"code"`
+	Board       [9]string         `json:"board"`
+	Turn        string            `json:"turn"`
+	PlayerX     string            `json:"playerX"`
+	PlayerO     string            `json:"playerO"`
+	PlayerXName string            `json:"playerXName"`
+	PlayerOName string            `json:"playerOName"`
+	IsPublic    bool              `json:"isPublic"`
+	Winner      string            `json:"winner"`
+	WinningLine []int             `json:"winningLine"`
+	Status      string            `json:"status"`
+	WinsX       int               `json:"winsX"`
+	WinsO       int               `json:"winsO"`
+	Spectators  map[string]string `json:"spectators"`
 }
 
 // rawRoom is a helper struct to safely read dirty data (mixed types) from Firebase
 type rawRoom struct {
-	Code        string        `json:"code"`
-	Board       []interface{} `json:"board"` // Loose type to prevent crashes
-	Turn        string        `json:"turn"`
-	PlayerX     string        `json:"playerX"`
-	PlayerO     string        `json:"playerO"`
-	PlayerXName string        `json:"playerXName"`
-	PlayerOName string        `json:"playerOName"`
-	IsPublic    bool          `json:"isPublic"`
-	Winner      string        `json:"winner"`
-	WinningLine []int         `json:"winningLine"`
-	Status      string        `json:"status"`
-	WinsX       int           `json:"winsX"`
-	WinsO       int           `json:"winsO"`
+	Code        string            `json:"code"`
+	Board       []interface{}     `json:"board"` // Loose type to prevent crashes
+	Turn        string            `json:"turn"`
+	PlayerX     string            `json:"playerX"`
+	PlayerO     string            `json:"playerO"`
+	PlayerXName string            `json:"playerXName"`
+	PlayerOName string            `json:"playerOName"`
+	IsPublic    bool              `json:"isPublic"`
+	Winner      string            `json:"winner"`
+	WinningLine []int             `json:"winningLine"`
+	Status      string            `json:"status"`
+	WinsX       int               `json:"winsX"`
+	WinsO       int               `json:"winsO"`
+	Spectators  map[string]string `json:"spectators"`
 }
 
 var client *db.Client
 
 func Init() error {
-	opt := option.WithCredentialsFile(config.CredPath)
+	var opts []option.ClientOption
+	if config.CredPath != "" {
+		if _, err := os.Stat(config.CredPath); err == nil {
+			opts = append(opts, option.WithCredentialsFile(config.CredPath))
+		}
+	}
+
 	cfg := &firebase.Config{DatabaseURL: config.DBURL}
-	app, err := firebase.NewApp(context.Background(), cfg, opt)
+	app, err := firebase.NewApp(context.Background(), cfg, opts...)
 	if err != nil {
 		return fmt.Errorf("error initializing app: %v", err)
 	}
@@ -78,6 +87,11 @@ func sanitizeRoom(code string, raw rawRoom) Room {
 		Status:      raw.Status,
 		WinsX:       raw.WinsX,
 		WinsO:       raw.WinsO,
+		Spectators:  raw.Spectators,
+	}
+
+	if clean.Spectators == nil {
+		clean.Spectators = make(map[string]string)
 	}
 
 	// Fix Code if missing in body
@@ -116,6 +130,7 @@ func CreateRoom(code, pid, name string, public bool) error {
 		PlayerXName: name,
 		IsPublic:    public,
 		Status:      "waiting",
+		Spectators:  make(map[string]string),
 	}
 	log.Printf("Creating Room: %s", code)
 	return ref.Set(context.Background(), r)
@@ -131,15 +146,15 @@ func GetRoom(code string) (*Room, error) {
 	if raw.PlayerX == "" {
 		return nil, fmt.Errorf("room does not exist")
 	}
-	
+
 	clean := sanitizeRoom(code, raw)
 	return &clean, nil
 }
 
 func JoinRoom(code, pid, name string) error {
 	ctx := context.Background()
-	
-	// Transaction needs strict type mapping, so if the room is corrupted, 
+
+	// Transaction needs strict type mapping, so if the room is corrupted,
 	// this might still fail unless we handle it inside.
 	// For simplicity, we assume GetRoom checks passed.
 	fn := func(tn db.TransactionNode) (interface{}, error) {
@@ -151,7 +166,12 @@ func JoinRoom(code, pid, name string) error {
 			return nil, fmt.Errorf("room not found")
 		}
 		if raw.PlayerO != "" && raw.PlayerO != pid {
-			return nil, fmt.Errorf("room is full")
+			// Room full -> Join as Spectator
+			if raw.Spectators == nil {
+				raw.Spectators = make(map[string]string)
+			}
+			raw.Spectators[pid] = name
+			return raw, nil
 		}
 
 		// Update fields
@@ -160,7 +180,7 @@ func JoinRoom(code, pid, name string) error {
 		raw.Status = "playing"
 		return raw, nil
 	}
-	return client.NewRef("rooms/" + code).Transaction(ctx, fn)
+	return client.NewRef("rooms/"+code).Transaction(ctx, fn)
 }
 
 func LeaveRoom(code, pid string, isHost bool) error {
@@ -168,47 +188,79 @@ func LeaveRoom(code, pid string, isHost bool) error {
 	ref := client.NewRef("rooms/" + code)
 
 	if isHost {
+		// Host leaves -> Delete room
 		return ref.Delete(ctx)
-	} else {
-		updates := map[string]interface{}{
-			"playerO": "",
-			"status":  "waiting",
-		}
-		return ref.Update(ctx, updates)
 	}
+
+	// Not host. Check if PlayerO or Spectator
+	// We need to fetch current state to know role, but here we passed isHost.
+	// Actually we should fetch first to be safe, or just try to remove from both.
+	// Firebase update paths:
+	// If O: update playerO=""
+	// If Spectator: delete spectators/pid
+
+	// Let's use transaction to be safe and atomic
+	fn := func(tn db.TransactionNode) (interface{}, error) {
+		var raw rawRoom
+		if err := tn.Unmarshal(&raw); err != nil {
+			return nil, err
+		}
+
+		if raw.PlayerO == pid {
+			raw.PlayerO = ""
+			raw.PlayerOName = ""
+			raw.Status = "waiting"
+		} else {
+			if raw.Spectators != nil {
+				delete(raw.Spectators, pid)
+			}
+		}
+		return raw, nil
+	}
+	return ref.Transaction(ctx, fn)
 }
 
 func UpdateMove(code, pid string, idx int, r Room) error {
 	// Game Logic
 	r.Board[idx] = r.Turn
 	winner, line := game.CheckWinner(r.Board)
-	
+
 	if winner != "" {
 		r.Winner = winner
 		r.WinningLine = line
 		r.Status = "finished"
-		if winner == "X" { r.WinsX++ } else { r.WinsO++ }
+		if winner == "X" {
+			r.WinsX++
+		} else {
+			r.WinsO++
+		}
 	} else if game.CheckDraw(r.Board) {
 		r.Status = "finished"
 	} else {
-		if r.Turn == "X" { r.Turn = "O" } else { r.Turn = "X" }
+		if r.Turn == "X" {
+			r.Turn = "O"
+		} else {
+			r.Turn = "X"
+		}
 	}
 
 	// When saving back, we save strict Room, effectively "fixing" the data
-	return client.NewRef("rooms/" + code).Set(context.Background(), r)
+	return client.NewRef("rooms/"+code).Set(context.Background(), r)
 }
 
-func RestartGame(code string) error {
+func RestartGame(code string, nextTurn string) error {
 	ctx := context.Background()
 	ref := client.NewRef("rooms/" + code)
 	fn := func(tn db.TransactionNode) (interface{}, error) {
 		var r Room
-		if err := tn.Unmarshal(&r); err != nil { return nil, err }
+		if err := tn.Unmarshal(&r); err != nil {
+			return nil, err
+		}
 		r.Board = [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "}
 		r.Winner = ""
 		r.WinningLine = nil
 		r.Status = "playing"
-		r.Turn = "X"
+		r.Turn = nextTurn
 		return r, nil
 	}
 	return ref.Transaction(ctx, fn)
@@ -216,7 +268,7 @@ func RestartGame(code string) error {
 
 func GetPublicRooms() ([]Room, error) {
 	ref := client.NewRef("rooms")
-	
+
 	// 1. Fetch as map of RawRooms (tolerant to bad data)
 	var rawMap map[string]rawRoom
 	if err := ref.Get(context.Background(), &rawMap); err != nil {

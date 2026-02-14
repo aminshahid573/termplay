@@ -1,0 +1,27 @@
+# Binaries
+server
+tictactoe-ssh
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Secrets & Credentials
+serviceAccount.json
+ssh_host_key
+ssh_host_key.pub
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+go.work
+/vendor/

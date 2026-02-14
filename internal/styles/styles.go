@@ -16,15 +16,14 @@ var (
 	Base   = lipgloss.NewStyle().Foreground(colorText)
 	Subtle = lipgloss.NewStyle().Foreground(colorSubtle)
 	Muted  = lipgloss.NewStyle().Foreground(colorMuted)
-	
+
 	// --- Section / Headers ---
-	SectionTitle = lipgloss.NewStyle().Foreground(colorText)
-	SectionLine  = lipgloss.NewStyle().Foreground(colorBorder)
+	SectionTitle    = lipgloss.NewStyle().Foreground(colorText)
+	SectionLine     = lipgloss.NewStyle().Foreground(colorBorder)
 	ItemBlurred     = lipgloss.NewStyle().Padding(0, 1).Foreground(colorText)
 	ItemFocused     = lipgloss.NewStyle().Padding(0, 1).Background(colorPurple).Foreground(colorBgDark)
 	InfoTextBlurred = lipgloss.NewStyle().Foreground(colorSubtle)
 	InfoTextFocused = lipgloss.NewStyle().Foreground(colorBgDark) // Dark text on purple bg
-
 
 	// --- Game Board ---
 	Title = lipgloss.NewStyle().
@@ -33,16 +32,16 @@ var (
 		Padding(0, 7).
 		MarginBottom(1)
 
-		ListContainer = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorPurple).
-		Padding(0, 1).
-		Width(60)
+	ListContainer = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPurple).
+			Padding(0, 1).
+			Width(70)
 
 	// Search bar with NO border (just text style)
 	SearchBar = lipgloss.NewStyle().
-		Foreground(colorHighlight).
-		Bold(true)
+			Foreground(colorHighlight).
+			Bold(true)
 
 	Cell = lipgloss.NewStyle().
 		Width(10).Height(5).
@@ -51,20 +50,20 @@ var (
 		BorderForeground(colorMuted)
 
 	CellSelected = Cell.Copy().
-		BorderForeground(colorPurple).
-		Background(lipgloss.Color("236"))
+			BorderForeground(colorPurple).
+			Background(lipgloss.Color("236"))
 
 	CellWin = Cell.Copy().
 		BorderForeground(colorGreen).
 		Background(lipgloss.Color("22"))
 
-	XStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
-	OStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	XStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+	OStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	PopupBox = lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(lipgloss.Color("#F25D94")).
-		Padding(1, 2).
-		Align(lipgloss.Center, lipgloss.Center)
+			Border(lipgloss.ThickBorder()).
+			BorderForeground(lipgloss.Color("#F25D94")).
+			Padding(1, 2).
+			Align(lipgloss.Center, lipgloss.Center)
 )
 
 var (
@@ -84,7 +83,6 @@ var (
 	Err       = lipgloss.NewStyle().Foreground(errColor)
 	Win       = lipgloss.NewStyle().Foreground(winColor)
 
-
 	MenuItem     = lipgloss.NewStyle().PaddingLeft(2)
 	MenuSelected = lipgloss.NewStyle().
 			PaddingLeft(2).
@@ -98,6 +96,4 @@ var (
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(highlightColor).
 		Padding(0, 1)
-
-
 )

@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
-	"context"
 
 	"tictactoe-ssh/internal/config"
 	"tictactoe-ssh/internal/db"
@@ -20,6 +21,8 @@ import (
 	bm "github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
 )
+
+var cleanupWg sync.WaitGroup
 
 func main() {
 	// 1. Init DB
@@ -37,13 +40,15 @@ func main() {
 			activeterm.Middleware(),
 		),
 	)
-	if err != nil { log.Fatal(err) }
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
-	
+
 	log.Info("Starting Server", "host", config.Host, "port", config.Port)
-	
+
 	go func() {
 		if err = s.ListenAndServe(); err != nil && err != ssh.ErrServerClosed {
 			log.Error("Listen Error", "err", err)
@@ -54,9 +59,35 @@ func main() {
 	<-done
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	s.Shutdown(ctx)
+	if err := s.Shutdown(ctx); err != nil {
+		log.Error("Shutdown", "err", err)
+	}
+
+	// Wait for cleanup goroutines
+	log.Info("Waiting for cleanups...")
+	cleanupWg.Wait()
+	log.Info("Shutdown complete")
 }
 
 func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-	return ui.InitialModel(s), []tea.ProgramOption{tea.WithAltScreen()}
+	cleanup := &ui.CleanupState{}
+
+	cleanupWg.Add(1)
+	// Start cleanup routine
+	go func() {
+		defer cleanupWg.Done()
+		<-s.Context().Done()
+
+		cleanup.Mu.Lock()
+		defer cleanup.Mu.Unlock()
+
+		if cleanup.RoomCode != "" {
+			log.Info("Cleaning up room", "code", cleanup.RoomCode, "id", cleanup.SessionID)
+			if err := db.LeaveRoom(cleanup.RoomCode, cleanup.SessionID, cleanup.IsHost); err != nil {
+				log.Error("Cleanup Error", "err", err)
+			}
+		}
+	}()
+
+	return ui.InitialModel(s, cleanup), []tea.ProgramOption{tea.WithAltScreen()}
 }
