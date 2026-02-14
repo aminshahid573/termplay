@@ -49,6 +49,24 @@ ssh tictactoe.example.com
    ssh -p 2324 localhost
    ```
 
+### Docker
+
+1. **Build**:
+   ```bash
+   docker build -t tictactoe-ssh .
+   ```
+
+2. **Run**:
+   Mount your `serviceAccount.json` and set the env var:
+   ```bash
+   docker run -d -p 2324:2324 \
+     -e FIREBASE_DB_URL="https://YOUR-PROJECT-ID-default-rtdb.firebaseio.com" \
+     -e GOOGLE_APPLICATION_CREDENTIALS="/app/serviceAccount.json" \
+     -v "$(pwd)/serviceAccount.json:/app/serviceAccount.json" \
+     --name tictactoe \
+     tictactoe-ssh
+   ```
+
 ## Tech Stack
 - **Go**: Backend logic.
 - **Bubble Tea**: TUI framework.

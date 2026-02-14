@@ -1,0 +1,9 @@
+.git
+.ssh
+bin
+server
+ssh_host_key
+ssh_host_key.pub
+serviceAccount.json
+.env
+.DS_Store
