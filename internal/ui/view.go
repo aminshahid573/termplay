@@ -371,21 +371,32 @@ func renderChessGame(m Model) string {
 		ranks = []string{"1", "2", "3", "4", "5", "6", "7", "8"}
 	}
 
-	var boardRows []string
+	var rankLabels []string
+	var rankLabelsR []string
+	var gridRows []string
 
 	for r, rank := range ranks {
-		var rowCells []string
-
 		rankLabel := lipgloss.NewStyle().
 			Foreground(styles.ChessLabel).
 			Bold(true).
 			Width(2).
-			Align(lipgloss.Right).
+			Height(sqH).
+			Align(lipgloss.Right, lipgloss.Center).
 			PaddingRight(1).
 			Render(rank)
+		rankLabels = append(rankLabels, rankLabel)
 
-		rowParts := []string{rankLabel}
+		rankLabelR := lipgloss.NewStyle().
+			Foreground(styles.ChessLabel).
+			Bold(true).
+			Width(2).
+			Height(sqH).
+			Align(lipgloss.Left, lipgloss.Center).
+			PaddingLeft(1).
+			Render(rank)
+		rankLabelsR = append(rankLabelsR, rankLabelR)
 
+		var rowCells []string
 		for c := range files {
 			isLight := (r+c)%2 == 0
 			bg := styles.ChessDarkSquare
@@ -405,7 +416,6 @@ func renderChessGame(m Model) string {
 				fg = styles.ChessWhitePiece
 			}
 
-			// Determine square highlighting
 			isCursor := (m.CursorR == br && m.CursorC == bc)
 			isSelected := (m.ChessSelected && m.ChessSelRow == br && m.ChessSelCol == bc)
 			isValidMove := m.ChessValidMoves[game.Pos{Row: br, Col: bc}]
@@ -421,7 +431,6 @@ func renderChessGame(m Model) string {
 				bg = styles.ChessHighlight
 			}
 
-			// Cursor indicator: override background with gold tint
 			if isCursor && !isSelected {
 				bg = lipgloss.Color("#FFD700")
 			}
@@ -437,24 +446,26 @@ func renderChessGame(m Model) string {
 
 			rowCells = append(rowCells, cell)
 		}
-
-		boardRow := lipgloss.JoinHorizontal(lipgloss.Top, rowCells...)
-		rowParts = append(rowParts, boardRow)
-
-		rankLabelR := lipgloss.NewStyle().
-			Foreground(styles.ChessLabel).
-			Bold(true).
-			Width(2).
-			Align(lipgloss.Left).
-			PaddingLeft(1).
-			Render(rank)
-		rowParts = append(rowParts, rankLabelR)
-
-		fullRow := lipgloss.JoinHorizontal(lipgloss.Center, rowParts...)
-		boardRows = append(boardRows, fullRow)
+		gridRows = append(gridRows, lipgloss.JoinHorizontal(lipgloss.Top, rowCells...))
 	}
 
-	board := lipgloss.JoinVertical(lipgloss.Left, boardRows...)
+	grid := lipgloss.JoinVertical(lipgloss.Left, gridRows...)
+
+	// Frame the grid
+	gridWithBorder := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(styles.ChessBorder).
+		Render(grid)
+
+	// Join ranks
+	leftRanks := lipgloss.JoinVertical(lipgloss.Top, rankLabels...)
+	rightRanks := lipgloss.JoinVertical(lipgloss.Top, rankLabelsR...)
+
+	// Add margin to ranks to account for top border
+	leftRanks = lipgloss.NewStyle().MarginTop(1).Render(leftRanks)
+	rightRanks = lipgloss.NewStyle().MarginTop(1).Render(rightRanks)
+
+	boardArea := lipgloss.JoinHorizontal(lipgloss.Top, leftRanks, gridWithBorder, rightRanks)
 
 	// File labels
 	var fileLabels []string
@@ -467,11 +478,13 @@ func renderChessGame(m Model) string {
 			Render(f)
 		fileLabels = append(fileLabels, fl)
 	}
+
+	// PaddingLeft = RankWidth (3) + Border (1) = 4
 	fileLabelRow := lipgloss.NewStyle().
-		PaddingLeft(3).
+		PaddingLeft(4).
 		Render(lipgloss.JoinHorizontal(lipgloss.Top, fileLabels...))
 	fileLabelRowTop := lipgloss.NewStyle().
-		PaddingLeft(3).
+		PaddingLeft(4).
 		Render(lipgloss.JoinHorizontal(lipgloss.Top, fileLabels...))
 
 	// Status
@@ -485,7 +498,6 @@ func renderChessGame(m Model) string {
 		}
 		statusText = res
 	} else {
-		// Determine whose turn it is
 		isMyTurn := false
 		if m.MySide == "X" && m.Game.Turn == "White" {
 			isMyTurn = true
@@ -498,7 +510,6 @@ func renderChessGame(m Model) string {
 		} else if isMyTurn {
 			statusText = "Your turn"
 		} else {
-			// Get opponent name
 			opponentName := m.Game.PlayerOName
 			if m.MySide == "O" {
 				opponentName = m.Game.PlayerXName
@@ -521,7 +532,7 @@ func renderChessGame(m Model) string {
 		header,
 		"",
 		fileLabelRowTop,
-		board,
+		boardArea,
 		fileLabelRow,
 		"",
 		status,
