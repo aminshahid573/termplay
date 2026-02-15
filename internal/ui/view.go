@@ -418,7 +418,7 @@ func renderChessGame(m Model) string {
 				Width(sqW).
 				Height(sqH).
 				Align(lipgloss.Center, lipgloss.Center).
-				Render(chessPieceSymbol(piece))
+				Render(chessPieceSymbol(piece, m.UseNerdFont))
 
 			rowCells = append(rowCells, cell)
 		}
@@ -470,10 +470,25 @@ func renderChessGame(m Model) string {
 		}
 		statusText = res
 	} else {
-		turn := m.Game.Turn
-		statusText = fmt.Sprintf("Turn: %s", turn)
+		// Determine whose turn it is
+		isMyTurn := false
+		if m.MySide == "X" && m.Game.Turn == "White" {
+			isMyTurn = true
+		} else if m.MySide == "O" && m.Game.Turn == "Black" {
+			isMyTurn = true
+		}
+
 		if m.MySide == "Spectator" {
-			statusText = fmt.Sprintf("[SPECTATING] Turn: %s", turn)
+			statusText = "[SPECTATING]"
+		} else if isMyTurn {
+			statusText = "Your turn"
+		} else {
+			// Get opponent name
+			opponentName := m.Game.PlayerOName
+			if m.MySide == "O" {
+				opponentName = m.Game.PlayerXName
+			}
+			statusText = opponentName + "'s turn"
 		}
 	}
 
@@ -489,7 +504,7 @@ func renderChessGame(m Model) string {
 	// Help text
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#888888")).
-		Render("arrows/hjkl move • enter/space select • esc deselect • q quit")
+		Render("arrows/hjkl move • enter/space select • esc deselect • f font • q quit")
 
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		styles.Title.Render("CHESS"),
@@ -558,43 +573,62 @@ func computeChessSquareSize(termWidth, termHeight int) (sqW, sqH int) {
 	return cellUnit * 2, cellUnit
 }
 
-func chessPieceSymbol(p game.ChessPiece) string {
+// Nerd Font chess icons (md-chess_* from Material Design Icons)
+const (
+	nfKing   = "\U000F0857" // nf-md-chess_king
+	nfQueen  = "\U000F085A" // nf-md-chess_queen
+	nfRook   = "\U000F085B" // nf-md-chess_rook
+	nfBishop = "\U000F085C" // nf-md-chess_bishop
+	nfKnight = "\U000F0858" // nf-md-chess_knight
+	nfPawn   = "\U000F0859" // nf-md-chess_pawn
+)
+
+// Unicode fallback chess symbols (filled set)
+const (
+	ucKing   = "♚"
+	ucQueen  = "♛"
+	ucRook   = "♜"
+	ucBishop = "♝"
+	ucKnight = "♞"
+	ucPawn   = "♟"
+)
+
+func chessPieceSymbol(p game.ChessPiece, useNerd bool) string {
 	if p.IsEmpty() {
 		return ""
 	}
 
-	// Unicode fallback chess symbols
+	if useNerd {
+		switch p.Type {
+		case "K":
+			return nfKing
+		case "Q":
+			return nfQueen
+		case "R":
+			return nfRook
+		case "B":
+			return nfBishop
+		case "N":
+			return nfKnight
+		case "P":
+			return nfPawn
+		}
+	}
+
+	// Unicode fallback
 	switch p.Type {
 	case "K":
-		if p.IsWhite {
-			return "♔"
-		}
-		return "♚"
+		return ucKing
 	case "Q":
-		if p.IsWhite {
-			return "♕"
-		}
-		return "♛"
+		return ucQueen
 	case "R":
-		if p.IsWhite {
-			return "♖"
-		}
-		return "♜"
+		return ucRook
 	case "B":
-		if p.IsWhite {
-			return "♗"
-		}
-		return "♝"
+		return ucBishop
 	case "N":
-		if p.IsWhite {
-			return "♘"
-		}
-		return "♞"
+		return ucKnight
 	case "P":
-		if p.IsWhite {
-			return "♙"
-		}
-		return "♟"
+		return ucPawn
 	}
 	return ""
 }

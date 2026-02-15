@@ -71,6 +71,7 @@ type Model struct {
 	ChessSelCol     int
 	ChessValidMoves map[game.Pos]bool
 	ChessIsBlocked  bool
+	UseNerdFont     bool
 
 	Game db.Room
 }

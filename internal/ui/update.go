@@ -488,6 +488,9 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.CursorC < 7 {
 			m.CursorC++
 		}
+	case "f":
+		m.UseNerdFont = !m.UseNerdFont
+		return m, nil
 
 	case "enter", " ":
 		if !isMyTurn {
