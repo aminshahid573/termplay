@@ -18,40 +18,44 @@ import (
 
 // Room is the clean, strict structure used by the Game UI
 type Room struct {
-	Code        string            `json:"code"`
-	Board       [9]string         `json:"board"`
-	Turn        string            `json:"turn"`
-	PlayerX     string            `json:"playerX"`
-	PlayerO     string            `json:"playerO"`
-	PlayerXName string            `json:"playerXName"`
-	PlayerOName string            `json:"playerOName"`
-	IsPublic    bool              `json:"isPublic"`
-	Winner      string            `json:"winner"`
-	WinningLine []int             `json:"winningLine"`
-	Status      string            `json:"status"`
-	WinsX       int               `json:"winsX"`
-	WinsO       int               `json:"winsO"`
-	Spectators  map[string]string `json:"spectators"`
-	UpdatedAt   int64             `json:"updatedAt"`
+	Code        string                `json:"code"`
+	Board       [9]string             `json:"board"`
+	Turn        string                `json:"turn"`
+	PlayerX     string                `json:"playerX"`
+	PlayerO     string                `json:"playerO"`
+	PlayerXName string                `json:"playerXName"`
+	PlayerOName string                `json:"playerOName"`
+	IsPublic    bool                  `json:"isPublic"`
+	Winner      string                `json:"winner"`
+	WinningLine []int                 `json:"winningLine"`
+	Status      string                `json:"status"`
+	WinsX       int                   `json:"winsX"`
+	WinsO       int                   `json:"winsO"`
+	Spectators  map[string]string     `json:"spectators"`
+	UpdatedAt   int64                 `json:"updatedAt"`
+	GameType    string                `json:"gameType"`
+	ChessBoard  [8][8]game.ChessPiece `json:"chessBoard"`
 }
 
 // rawRoom is a helper struct to safely read dirty data (mixed types) from Firebase
 type rawRoom struct {
-	Code        string            `json:"code"`
-	Board       []interface{}     `json:"board"` // Loose type to prevent crashes
-	Turn        string            `json:"turn"`
-	PlayerX     string            `json:"playerX"`
-	PlayerO     string            `json:"playerO"`
-	PlayerXName string            `json:"playerXName"`
-	PlayerOName string            `json:"playerOName"`
-	IsPublic    bool              `json:"isPublic"`
-	Winner      string            `json:"winner"`
-	WinningLine []int             `json:"winningLine"`
-	Status      string            `json:"status"`
-	WinsX       int               `json:"winsX"`
-	WinsO       int               `json:"winsO"`
-	Spectators  map[string]string `json:"spectators"`
-	UpdatedAt   int64             `json:"updatedAt"`
+	Code        string                `json:"code"`
+	Board       []interface{}         `json:"board"` // Loose type to prevent crashes
+	Turn        string                `json:"turn"`
+	PlayerX     string                `json:"playerX"`
+	PlayerO     string                `json:"playerO"`
+	PlayerXName string                `json:"playerXName"`
+	PlayerOName string                `json:"playerOName"`
+	IsPublic    bool                  `json:"isPublic"`
+	Winner      string                `json:"winner"`
+	WinningLine []int                 `json:"winningLine"`
+	Status      string                `json:"status"`
+	WinsX       int                   `json:"winsX"`
+	WinsO       int                   `json:"winsO"`
+	Spectators  map[string]string     `json:"spectators"`
+	UpdatedAt   int64                 `json:"updatedAt"`
+	GameType    string                `json:"gameType"`
+	ChessBoard  [8][8]game.ChessPiece `json:"chessBoard"`
 }
 
 var client *db.Client
@@ -96,6 +100,12 @@ func sanitizeRoom(code string, raw rawRoom) Room {
 		WinsX:       raw.WinsX,
 		WinsO:       raw.WinsO,
 		Spectators:  raw.Spectators,
+		GameType:    raw.GameType,
+		ChessBoard:  raw.ChessBoard,
+	}
+
+	if clean.GameType == "" {
+		clean.GameType = "tictactoe"
 	}
 
 	if clean.Spectators == nil {
@@ -128,7 +138,7 @@ func sanitizeRoom(code string, raw rawRoom) Room {
 	return clean
 }
 
-func CreateRoom(code, pid, name string, public bool) error {
+func CreateRoom(code, pid, name string, public bool, gameType string) error {
 	ref := client.NewRef("rooms/" + code)
 
 	// Check collision
@@ -141,16 +151,24 @@ func CreateRoom(code, pid, name string, public bool) error {
 
 	r := Room{
 		Code:        code,
-		Board:       [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "},
-		Turn:        "X",
 		PlayerX:     pid,
 		PlayerXName: name,
 		IsPublic:    public,
 		Status:      "waiting",
 		Spectators:  make(map[string]string),
 		UpdatedAt:   time.Now().Unix(),
+		GameType:    gameType,
 	}
-	log.Printf("Creating Room: %s", code)
+
+	if gameType == "chess" {
+		r.ChessBoard = game.StartingChessBoard
+		r.Turn = "White"
+	} else {
+		r.Board = [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "}
+		r.Turn = "X"
+	}
+
+	log.Printf("Creating Room: %s (%s)", code, gameType)
 	return ref.Set(context.Background(), r)
 }
 
@@ -274,6 +292,21 @@ func UpdateMove(code, pid string, idx int, r Room) error {
 	return client.NewRef("rooms/"+code).Set(context.Background(), r)
 }
 
+func UpdateChessState(code string, board [8][8]game.ChessPiece, turn string) error {
+	ref := client.NewRef("rooms/" + code)
+	fn := func(tn db.TransactionNode) (interface{}, error) {
+		var r Room
+		if err := tn.Unmarshal(&r); err != nil {
+			return nil, err
+		}
+		r.ChessBoard = board
+		r.Turn = turn
+		r.UpdatedAt = time.Now().Unix()
+		return r, nil
+	}
+	return ref.Transaction(context.Background(), fn)
+}
+
 func RestartGame(code string, nextTurn string) error {
 	ctx := context.Background()
 	ref := client.NewRef("rooms/" + code)
@@ -282,11 +315,25 @@ func RestartGame(code string, nextTurn string) error {
 		if err := tn.Unmarshal(&r); err != nil {
 			return nil, err
 		}
-		r.Board = [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "}
+
+		if r.GameType == "chess" {
+			r.ChessBoard = game.StartingChessBoard
+			// Map X/O to White/Black if needed, or rely on caller
+			if nextTurn == "X" {
+				nextTurn = "White"
+			}
+			if nextTurn == "O" {
+				nextTurn = "Black"
+			}
+			r.Turn = nextTurn
+		} else {
+			r.Board = [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "}
+			r.Turn = nextTurn
+		}
+
 		r.Winner = ""
 		r.WinningLine = nil
 		r.Status = "playing"
-		r.Turn = nextTurn
 		return r, nil
 	}
 	return ref.Transaction(ctx, fn)

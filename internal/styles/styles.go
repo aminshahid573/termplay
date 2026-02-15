@@ -9,6 +9,19 @@ var (
 	specialColor   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
 	errColor       = lipgloss.AdaptiveColor{Light: "#F25D94", Dark: "#F55385"}
 	winColor       = lipgloss.AdaptiveColor{Light: "#00FF00", Dark: "#00FF00"}
+
+	// Chess Colors
+	ChessLightSquare = lipgloss.Color("#EEEED2")
+	ChessDarkSquare  = lipgloss.Color("#769656")
+	ChessBorder      = lipgloss.Color("#4E7837")
+	ChessLabel       = lipgloss.Color("#A0B880")
+	ChessBg          = lipgloss.Color("#302E2B")
+	ChessWhitePiece  = lipgloss.Color("#4169E1")
+	ChessBlackPiece  = lipgloss.Color("#8B0000")
+	ChessHighlight   = lipgloss.Color("#FFFF66")
+	ChessSelected    = lipgloss.Color("#66CCFF")
+	ChessBlocked     = lipgloss.Color("#FF3333")
+	ChessCapture     = lipgloss.Color("#FF6666")
 )
 
 var (

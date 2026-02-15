@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tictactoe-ssh/internal/db"
+	"tictactoe-ssh/internal/game"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,14 +94,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Height = msg.Height
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
-			// If we are in a game and hosting, we might want to clean up,
-			// but usually Wish handles the connection drop.
-			// Explicit quit here is fine.
 			return m, tea.Quit
 		}
 	}
 
-	// Global Popup Handler (Are you sure you want to leave?)
+	// Global Popup Handler
 	if m.PopupActive {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -109,8 +107,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "1":
 					// Random
 					next := "X"
-					if rand.Intn(2) == 0 {
-						next = "O"
+					if m.Game.GameType == "chess" {
+						next = "White"
+						if rand.Intn(2) == 0 {
+							next = "Black"
+						}
+					} else {
+						if rand.Intn(2) == 0 {
+							next = "O"
+						}
 					}
 					m.PopupActive = false
 					return m, func() tea.Msg {
@@ -122,10 +127,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					next := m.Game.Winner
 					if next == "" {
 						// If draw, Random
-						if rand.Intn(2) == 0 {
-							next = "O"
+						if m.Game.GameType == "chess" {
+							next = "White"
+							if rand.Intn(2) == 0 {
+								next = "Black"
+							}
 						} else {
 							next = "X"
+							if rand.Intn(2) == 0 {
+								next = "O"
+							}
+						}
+					} else {
+						// Map winner to turn
+						if m.Game.GameType == "chess" {
+							// Winner is White/Black
+							next = m.Game.Winner
+						} else {
+							// Winner is X/O
+							next = m.Game.Winner
 						}
 					}
 					m.PopupActive = false
@@ -162,6 +182,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.State {
 	case StateNameInput:
 		m, cmd = updateName(m, msg)
+	case StateGameSelect:
+		m, cmd = updateGameSelect(m, msg)
 	case StateMenu:
 		m, cmd = updateMenu(m, msg)
 	case StateCreateConfig:
@@ -186,13 +208,41 @@ func updateName(m Model, msg tea.Msg) (Model, tea.Cmd) {
 			val := strings.TrimSpace(m.TextInput.Value())
 			if len(val) > 0 {
 				m.MyName = val
-				m.State = StateMenu
+				m.State = StateGameSelect // Transition to Game Select
+				m.MenuIndex = 0           // Reset index
 				return m, nil
 			}
 		}
 	}
 	m.TextInput, cmd = m.TextInput.Update(msg)
 	return m, cmd
+}
+
+// --- 1.5 Game Selection Logic ---
+func updateGameSelect(m Model, msg tea.Msg) (Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.MenuIndex > 0 {
+				m.MenuIndex--
+			}
+		case "down", "j":
+			if m.MenuIndex < 1 { // 0: TicTacToe, 1: Chess
+				m.MenuIndex++
+			}
+		case "enter":
+			if m.MenuIndex == 0 {
+				m.SelectedGame = "tictactoe"
+			} else {
+				m.SelectedGame = "chess"
+			}
+			m.State = StateMenu
+			m.MenuIndex = 0
+			return m, nil
+		}
+	}
+	return m, nil
 }
 
 // --- 2. Main Menu Logic ---
@@ -244,7 +294,12 @@ func updateCreateConfig(m Model, msg tea.Msg) (Model, tea.Cmd) {
 			}
 			m.Busy = true
 			code := generateCode()
-			return m, createRoomCmd(code, m.SessionID, m.MyName, m.IsPublicCreate)
+			// Use SelectedGame
+			gameType := m.SelectedGame
+			if gameType == "" {
+				gameType = "tictactoe"
+			} // Fallback
+			return m, createRoomCmd(code, m.SessionID, m.MyName, m.IsPublicCreate, gameType)
 		case "esc":
 			m.State = StateMenu
 		}
@@ -298,10 +353,7 @@ func updatePublicList(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case roomsFetchedMsg:
 		m.PublicRooms = []db.Room(msg)
-		// Clear previous errors if fetch succeeded
 		if m.Err != nil {
-			// Check if error was related to fetching?
-			// For simplicity, just clear it so UI looks clean
 			m.Err = nil
 		}
 
@@ -357,32 +409,174 @@ func updateGame(m Model, msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch msg.String() {
-		case "up", "k":
-			if m.CursorR > 0 {
-				m.CursorR--
+		if m.Game.GameType == "chess" {
+			// Handle Chess Input
+			return updateChessInput(m, msg)
+		} else {
+			// Handle TicTacToe Input
+			switch msg.String() {
+			case "up", "k":
+				if m.CursorR > 0 {
+					m.CursorR--
+				}
+			case "down", "j":
+				if m.CursorR < 2 {
+					m.CursorR++
+				}
+			case "left", "h":
+				if m.CursorC > 0 {
+					m.CursorC--
+				}
+			case "right", "l":
+				if m.CursorC < 2 {
+					m.CursorC++
+				}
+			case " ", "enter":
+				if m.MySide == "Spectator" {
+					return m, nil
+				}
+				idx := m.CursorR*3 + m.CursorC
+				if m.Game.Turn == m.MySide && m.Game.Board[idx] == " " {
+					return m, func() tea.Msg {
+						db.UpdateMove(m.RoomCode, m.SessionID, idx, m.Game)
+						return nil
+					}
+				}
 			}
-		case "down", "j":
-			if m.CursorR < 2 {
-				m.CursorR++
-			}
-		case "left", "h":
-			if m.CursorC > 0 {
-				m.CursorC--
-			}
-		case "right", "l":
-			if m.CursorC < 2 {
-				m.CursorC++
-			}
-		case " ", "enter":
-			if m.MySide == "Spectator" {
+		}
+	}
+	return m, nil
+}
+
+// updateChessInput handles chess specific keys
+func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
+	// Spectators cannot move
+	if m.MySide == "Spectator" {
+		return m, nil
+	}
+
+	// Turn Check: "White" vs "Black"
+	// MySide is "X" (Host) or "O" (Guest).
+	// Host is White, Guest is Black.
+	isMyTurn := false
+	if m.MySide == "X" && m.Game.Turn == "White" {
+		isMyTurn = true
+	}
+	if m.MySide == "O" && m.Game.Turn == "Black" {
+		isMyTurn = true
+	}
+
+	if !isMyTurn {
+		// Just navigation is allowed? Or restrict selection too?
+		// We can allow looking around.
+	}
+
+	switch msg.String() {
+	case "up", "k":
+		if m.CursorR > 0 {
+			m.CursorR--
+		}
+	case "down", "j":
+		if m.CursorR < 7 {
+			m.CursorR++
+		}
+	case "left", "h":
+		if m.CursorC > 0 {
+			m.CursorC--
+		}
+	case "right", "l":
+		if m.CursorC < 7 {
+			m.CursorC++
+		}
+
+	case "enter", " ":
+		if !isMyTurn {
+			return m, nil
+		}
+
+		// Chess Move Logic
+		// Using m.Chess* fields
+		// Map CursorR/C to internal board indices?
+		// UI board is 0..7. m.Game.ChessBoard is [8][8].
+		// Indices match.
+
+		// Logic adapted from CONTEXT.md
+		if m.ChessSelected {
+			// Moving to target?
+			// Check if (m.CursorR, m.CursorC) is in ValidMoves
+			// Pos struct in game package
+			// m.ChessValidMoves is map[game.Pos]bool
+
+			// If clicking same piece -> deselect
+			if m.CursorR == m.ChessSelRow && m.CursorC == m.ChessSelCol {
+				m.ChessSelected = false
+				m.ChessValidMoves = make(map[game.Pos]bool)
 				return m, nil
 			}
-			idx := m.CursorR*3 + m.CursorC
-			if m.Game.Turn == m.MySide && m.Game.Board[idx] == " " {
+
+			// If valid move
+			// But wait, m.ChessValidMoves is local state?
+			// It should be calculated when selecting.
+			// Is it persisted? No, local UI state.
+			// OK.
+
+			if m.ChessValidMoves[game.Pos{Row: m.CursorR, Col: m.CursorC}] {
+				// Execute Move
+				// Update Board locally then send to DB
+				newBoard := m.Game.ChessBoard
+				// Move piece
+				newBoard[m.CursorR][m.CursorC] = newBoard[m.ChessSelRow][m.ChessSelCol]
+				newBoard[m.ChessSelRow][m.ChessSelCol] = game.ChessPiece{} // Empty
+
+				// Clear selection
+				m.ChessSelected = false
+				m.ChessValidMoves = make(map[game.Pos]bool)
+
+				// Switch Turn
+				nextTurn := "Black"
+				if m.Game.Turn == "Black" {
+					nextTurn = "White"
+				}
+
 				return m, func() tea.Msg {
-					db.UpdateMove(m.RoomCode, m.SessionID, idx, m.Game)
+					db.UpdateChessState(m.RoomCode, newBoard, nextTurn)
 					return nil
+				}
+			}
+
+			// If clicking another friendly piece -> select that instead
+			p := m.Game.ChessBoard[m.CursorR][m.CursorC]
+			if !p.IsEmpty() {
+				// Check color
+				isWhite := p.IsWhite
+				myColorWhite := (m.MySide == "X")
+				if isWhite == myColorWhite {
+					// Select this one
+					m.ChessSelected = true
+					m.ChessSelRow = m.CursorR
+					m.ChessSelCol = m.CursorC
+					// Calc moves
+					m.ChessValidMoves = game.GetValidChessMoves(m.Game.ChessBoard, m.CursorR, m.CursorC)
+					return m, nil
+				}
+			}
+
+			// Clicked empty/invalid -> deselect
+			m.ChessSelected = false
+			m.ChessValidMoves = make(map[game.Pos]bool)
+
+		} else {
+			// Selecting
+			p := m.Game.ChessBoard[m.CursorR][m.CursorC]
+			if !p.IsEmpty() {
+				// Check color
+				isWhite := p.IsWhite
+				myColorWhite := (m.MySide == "X")
+				if isWhite == myColorWhite {
+					m.ChessSelected = true
+					m.ChessSelRow = m.CursorR
+					m.ChessSelCol = m.CursorC
+					m.ChessValidMoves = game.GetValidChessMoves(m.Game.ChessBoard, m.CursorR, m.CursorC)
 				}
 			}
 		}
@@ -417,9 +611,9 @@ func fetchPublicRoomsCmd() tea.Cmd {
 	}
 }
 
-func createRoomCmd(code, pid, name string, public bool) tea.Cmd {
+func createRoomCmd(code, pid, name string, public bool, gameType string) tea.Cmd {
 	return func() tea.Msg {
-		if err := db.CreateRoom(code, pid, name, public); err != nil {
+		if err := db.CreateRoom(code, pid, name, public, gameType); err != nil {
 			return errMsg(err)
 		}
 		return roomCreatedMsg{code: code}

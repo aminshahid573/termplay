@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"tictactoe-ssh/internal/db"
+	"tictactoe-ssh/internal/game"
 	"tictactoe-ssh/internal/styles"
 
 	"github.com/charmbracelet/lipgloss"
@@ -125,6 +126,10 @@ func (m Model) View() string {
 			styles.Subtle.Render("Share this code with your friend"),
 		)
 		helpText = "Esc: Leave Room"
+
+	case StateGameSelect:
+		content = renderGameSelect(m)
+		helpText = "↑/↓: Navigate • Enter: Select"
 
 	case StateGame:
 		content = renderGame(m)
@@ -253,7 +258,28 @@ func max(a, b int) int {
 	return b
 }
 
+func renderGameSelect(m Model) string {
+	opts := []string{"Tic Tac Toe", "Chess"}
+	var renderedOpts []string
+	for i, opt := range opts {
+		if i == m.MenuIndex {
+			renderedOpts = append(renderedOpts, styles.ItemFocused.Render(" "+opt+" "))
+		} else {
+			renderedOpts = append(renderedOpts, styles.ItemBlurred.Render(" "+opt+" "))
+		}
+	}
+	list := lipgloss.JoinVertical(lipgloss.Left, renderedOpts...)
+	return lipgloss.JoinVertical(lipgloss.Center,
+		styles.Title.Render("SELECT GAME"),
+		list,
+	)
+}
+
 func renderGame(m Model) string {
+	if m.Game.GameType == "chess" {
+		return renderChessGame(m)
+	}
+
 	header := lipgloss.JoinHorizontal(lipgloss.Center,
 		fmt.Sprintf("%s (Wins: %d)", m.Game.PlayerXName, m.Game.WinsX),
 		"  VS  ",
@@ -322,4 +348,253 @@ func renderGame(m Model) string {
 		"\n",
 		status,
 	)
+}
+
+func renderChessGame(m Model) string {
+	header := lipgloss.JoinHorizontal(lipgloss.Center,
+		fmt.Sprintf("%s (White)", m.Game.PlayerXName),
+		"  VS  ",
+		fmt.Sprintf("%s (Black)", m.Game.PlayerOName),
+	)
+
+	sqW, sqH := computeChessSquareSize(m.Width, m.Height)
+
+	files := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	ranks := []string{"8", "7", "6", "5", "4", "3", "2", "1"}
+
+	var boardRows []string
+
+	for r, rank := range ranks {
+		var rowCells []string
+
+		rankLabel := lipgloss.NewStyle().
+			Foreground(styles.ChessLabel).
+			Bold(true).
+			Width(2).
+			Align(lipgloss.Right).
+			PaddingRight(1).
+			Render(rank)
+
+		rowParts := []string{rankLabel}
+
+		for c := range files {
+			isLight := (r+c)%2 == 0
+			bg := styles.ChessDarkSquare
+			if isLight {
+				bg = styles.ChessLightSquare
+			}
+
+			piece := m.Game.ChessBoard[r][c]
+			fg := styles.ChessBlackPiece
+			if piece.IsWhite {
+				fg = styles.ChessWhitePiece
+			}
+
+			// Determine square highlighting
+			isCursor := (r == m.CursorR && c == m.CursorC)
+			isSelected := (m.ChessSelected && r == m.ChessSelRow && c == m.ChessSelCol)
+			isValidMove := m.ChessValidMoves[game.Pos{Row: r, Col: c}]
+			isCapture := isValidMove && !m.Game.ChessBoard[r][c].IsEmpty()
+
+			if isSelected && m.ChessIsBlocked {
+				bg = styles.ChessBlocked
+			} else if isSelected {
+				bg = styles.ChessSelected
+			} else if isCapture {
+				bg = styles.ChessCapture
+			} else if isValidMove {
+				bg = styles.ChessHighlight
+			}
+
+			// Cursor indicator: override background with gold tint
+			if isCursor && !isSelected {
+				bg = lipgloss.Color("#FFD700")
+			}
+
+			cell := lipgloss.NewStyle().
+				Background(bg).
+				Foreground(fg).
+				Bold(true).
+				Width(sqW).
+				Height(sqH).
+				Align(lipgloss.Center, lipgloss.Center).
+				Render(chessPieceSymbol(piece))
+
+			rowCells = append(rowCells, cell)
+		}
+
+		boardRow := lipgloss.JoinHorizontal(lipgloss.Top, rowCells...)
+		rowParts = append(rowParts, boardRow)
+
+		rankLabelR := lipgloss.NewStyle().
+			Foreground(styles.ChessLabel).
+			Bold(true).
+			Width(2).
+			Align(lipgloss.Left).
+			PaddingLeft(1).
+			Render(rank)
+		rowParts = append(rowParts, rankLabelR)
+
+		fullRow := lipgloss.JoinHorizontal(lipgloss.Center, rowParts...)
+		boardRows = append(boardRows, fullRow)
+	}
+
+	board := lipgloss.JoinVertical(lipgloss.Left, boardRows...)
+
+	// File labels
+	var fileLabels []string
+	for _, f := range files {
+		fl := lipgloss.NewStyle().
+			Foreground(styles.ChessLabel).
+			Bold(true).
+			Width(sqW).
+			Align(lipgloss.Center).
+			Render(f)
+		fileLabels = append(fileLabels, fl)
+	}
+	fileLabelRow := lipgloss.NewStyle().
+		PaddingLeft(3).
+		Render(lipgloss.JoinHorizontal(lipgloss.Top, fileLabels...))
+	fileLabelRowTop := lipgloss.NewStyle().
+		PaddingLeft(3).
+		Render(lipgloss.JoinHorizontal(lipgloss.Top, fileLabels...))
+
+	// Status
+	var statusText string
+	if m.Game.Status == "waiting" {
+		statusText = "Opponent disconnected. Waiting..."
+	} else if m.Game.Status == "finished" {
+		res := "DRAW"
+		if m.Game.Winner != "" {
+			res = m.Game.Winner + " WINS!"
+		}
+		statusText = res
+	} else {
+		turn := m.Game.Turn
+		statusText = fmt.Sprintf("Turn: %s", turn)
+		if m.MySide == "Spectator" {
+			statusText = fmt.Sprintf("[SPECTATING] Turn: %s", turn)
+		}
+	}
+
+	statusColor := lipgloss.Color("#CCCCCC")
+	if m.ChessIsBlocked {
+		statusColor = styles.ChessBlocked
+	}
+	status := lipgloss.NewStyle().
+		Foreground(statusColor).
+		Bold(m.ChessIsBlocked).
+		Render(statusText)
+
+	// Help text
+	help := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#888888")).
+		Render("arrows/hjkl move • enter/space select • esc deselect • q quit")
+
+	content := lipgloss.JoinVertical(lipgloss.Center,
+		styles.Title.Render("CHESS"),
+		header,
+		"",
+		fileLabelRowTop,
+		board,
+		fileLabelRow,
+		"",
+		status,
+		help,
+	)
+
+	blockBorder := lipgloss.Border{
+		Top:         "▄",
+		Bottom:      "▀",
+		Left:        "▐",
+		Right:       "▌",
+		TopLeft:     "▗",
+		TopRight:    "▖",
+		BottomLeft:  "▝",
+		BottomRight: "▘",
+	}
+
+	bordered := lipgloss.NewStyle().
+		Border(blockBorder).
+		BorderForeground(styles.ChessBorder).
+		Padding(1, 2).
+		Render(content)
+
+	fullScreen := lipgloss.NewStyle().
+		Width(m.Width).
+		Height(m.Height).
+		Background(styles.ChessBg).
+		Align(lipgloss.Center, lipgloss.Center)
+
+	result := fullScreen.Render(bordered)
+
+	lines := strings.Split(result, "\n")
+	if len(lines) > m.Height {
+		lines = lines[:m.Height]
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func computeChessSquareSize(termWidth, termHeight int) (sqW, sqH int) {
+	availW := termWidth - 8
+	availH := termHeight - 6
+
+	if availW < 16 || availH < 8 {
+		return 2, 1
+	}
+
+	maxFromW := availW / (8 * 2)
+	maxFromH := availH / 8
+
+	cellUnit := maxFromW
+	if maxFromH < cellUnit {
+		cellUnit = maxFromH
+	}
+	if cellUnit < 1 {
+		cellUnit = 1
+	}
+
+	return cellUnit * 2, cellUnit
+}
+
+func chessPieceSymbol(p game.ChessPiece) string {
+	if p.IsEmpty() {
+		return ""
+	}
+
+	// Unicode fallback chess symbols
+	switch p.Type {
+	case "K":
+		if p.IsWhite {
+			return "♔"
+		}
+		return "♚"
+	case "Q":
+		if p.IsWhite {
+			return "♕"
+		}
+		return "♛"
+	case "R":
+		if p.IsWhite {
+			return "♖"
+		}
+		return "♜"
+	case "B":
+		if p.IsWhite {
+			return "♗"
+		}
+		return "♝"
+	case "N":
+		if p.IsWhite {
+			return "♘"
+		}
+		return "♞"
+	case "P":
+		if p.IsWhite {
+			return "♙"
+		}
+		return "♟"
+	}
+	return ""
 }

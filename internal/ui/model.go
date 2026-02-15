@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"tictactoe-ssh/internal/db"
+	"tictactoe-ssh/internal/game"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +22,7 @@ const (
 	StateInputCode
 	StateLobby
 	StateGame
+	StateGameSelect
 )
 
 const (
@@ -54,6 +56,7 @@ type Model struct {
 	ListSelectedRow int
 
 	IsPublicCreate bool
+	SelectedGame   string
 
 	MyName   string
 	MySide   string
@@ -61,6 +64,13 @@ type Model struct {
 
 	CursorR int
 	CursorC int
+
+	// Chess State
+	ChessSelected   bool
+	ChessSelRow     int
+	ChessSelCol     int
+	ChessValidMoves map[game.Pos]bool
+	ChessIsBlocked  bool
 
 	Game db.Room
 }
@@ -101,15 +111,16 @@ func InitialModel(s ssh.Session, cleanup *CleanupState) Model {
 	cleanup.SessionID = id
 
 	return Model{
-		State:       StateNameInput,
-		TextInput:   ti,
-		SearchInput: si,
-		SessionID:   id,
-		Cleanup:     cleanup,
-		MenuIndex:   0,
-		CursorR:     1,
-		CursorC:     1,
-		Game:        db.Room{Board: [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "}},
+		State:           StateNameInput,
+		TextInput:       ti,
+		SearchInput:     si,
+		SessionID:       id,
+		Cleanup:         cleanup,
+		MenuIndex:       0,
+		CursorR:         1,
+		CursorC:         1,
+		ChessValidMoves: make(map[game.Pos]bool),
+		Game:            db.Room{Board: [9]string{" ", " ", " ", " ", " ", " ", " ", " ", " "}},
 	}
 }
 
