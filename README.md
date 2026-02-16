@@ -30,16 +30,20 @@ ssh termplay.me
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/chess.png" alt="Chess Gameplay" width="45%">
+  <img src="docs/screenshots/games.png" alt="Games" width="45%">
   &nbsp; &nbsp;
-  <img src="docs/screenshots/tictac.png" alt="Tic-Tac-Toe Gameplay" width="45%">
+  <img src="docs/screenshots/chess.png" alt="Chess Gameplay" width="45%">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/snake-menu.png" alt="Snake Menu" width="45%">
+  <img src="docs/screenshots/tictactoe.png" alt="Tic-Tac-Toe" width="45%">
   &nbsp; &nbsp;
-  <img src="docs/screenshots/snake-board.png" alt="Snake Gameplay" width="45%">
+  <img src="docs/screenshots/snake-menu.png" alt="Snake Menu" width="45%">
 </p>
+<p align="center">
+ <img src="docs/screenshots/snake.png" alt="Snake Gameplay" width="45%">
+</p>
+
 
 ## Run It Yourself
 
