@@ -83,4 +83,5 @@ docker run -d -p 2324:2324 \
 ```
 
 ---
-*Built with Go, Bubble Tea, and Wish.*
+<a href="https://charm.sh/"><img alt="The Charm logo" src="https://stuff.charm.sh/charm-banner-next.jpg" width="400"></a></br>
+Built with [Go](https://go.dev), [Bubble Tea](https://github.com/charmbracelet/bubbletea), and [Wish](https://github.com/charmbracelet/wish) by [Charmbracelet](https://github.com/charmbracelet).
