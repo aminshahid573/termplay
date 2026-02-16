@@ -19,10 +19,14 @@ type roomsFetchedMsg []db.Room
 type errMsg error
 type pollErrorMsg error
 
-type roomCreatedMsg struct{ code string }
+type roomCreatedMsg struct {
+	code     string
+	gameType string
+}
 type roomJoinedMsg struct {
-	code string
-	side string
+	code     string
+	side     string
+	gameType string
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,6 +69,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Cleanup.IsHost = true
 		m.Cleanup.Mu.Unlock()
 
+		if msg.gameType == "chess" {
+			m.CursorR = 7 // White Pieces (Rank 1)
+			m.CursorC = 4 // King File
+		} else {
+			m.CursorR = 1 // Middle of 3x3
+			m.CursorC = 1
+		}
+
 		m.State = StateLobby
 		return m, pollCmd(msg.code)
 
@@ -77,6 +89,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Cleanup.RoomCode = msg.code
 		m.Cleanup.IsHost = (msg.side == "X")
 		m.Cleanup.Mu.Unlock()
+
+		if msg.gameType == "chess" {
+			// If Black ("O"), we want Rank 8 (Index 0)
+			if msg.side == "O" {
+				m.CursorR = 0
+				m.CursorC = 4
+			} else {
+				// White or Spectator (Rank 1 -> Index 7)
+				m.CursorR = 7
+				m.CursorC = 4
+			}
+		} else {
+			m.CursorR = 1
+			m.CursorC = 1
+		}
 
 		m.State = StateGame
 		return m, pollCmd(msg.code)
@@ -644,7 +671,7 @@ func createRoomCmd(code, pid, name string, public bool, gameType string) tea.Cmd
 		if err := db.CreateRoom(code, pid, name, public, gameType); err != nil {
 			return errMsg(err)
 		}
-		return roomCreatedMsg{code: code}
+		return roomCreatedMsg{code: code, gameType: gameType}
 	}
 }
 
@@ -656,7 +683,9 @@ func joinRoomCmd(code, pid, name string) tea.Cmd {
 		// Determine role async
 		r, _ := db.GetRoom(code)
 		side := "O"
+		gameType := "tictactoe"
 		if r != nil {
+			gameType = r.GameType
 			if r.PlayerX == pid {
 				side = "X"
 			} else if r.PlayerO == pid {
@@ -665,7 +694,7 @@ func joinRoomCmd(code, pid, name string) tea.Cmd {
 				side = "Spectator"
 			}
 		}
-		return roomJoinedMsg{code: code, side: side}
+		return roomJoinedMsg{code: code, side: side, gameType: gameType}
 	}
 }
 

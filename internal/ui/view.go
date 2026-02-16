@@ -562,7 +562,7 @@ func renderChessGame(m Model) string {
 
 func computeChessSquareSize(termWidth, termHeight int) (sqW, sqH int) {
 	availW := termWidth - 8
-	availH := termHeight - 6
+	availH := termHeight - 14 // Increased buffer for UI elements
 
 	if availW < 16 || availH < 8 {
 		return 2, 1
