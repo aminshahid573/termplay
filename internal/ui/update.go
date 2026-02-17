@@ -40,7 +40,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Game = db.Room(roomMsg)
 		// Auto-transition from Lobby to Game
 		if m.State == StateLobby && m.Game.PlayerO != "" {
-			m.State = StateGame
+			if m.Game.GameType == "callbreak" {
+				m.Callbreak.IsMultiplayer = true
+				m.Callbreak.IsHost = true
+				m.Callbreak.MySeat = 0
+				m.Callbreak.PlayerNames = [4]string{m.MyName, m.Game.PlayerOName, "Bot1", "Bot2"}
+				m.Callbreak.Width = m.Width
+				m.Callbreak.Height = m.Height
+				m.Callbreak.StartGame()
+				m.State = StateCallbreak
+			} else {
+				m.State = StateGame
+			}
 		}
 		// Room deleted?
 		if m.Game.PlayerX == "" {
@@ -103,6 +114,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.CursorR = 7
 				m.CursorC = 4
 			}
+		} else if msg.gameType == "callbreak" {
+			m.Callbreak = callbreak.NewModel()
+			m.Callbreak.IsMultiplayer = true
+			m.Callbreak.IsHost = false
+			m.Callbreak.MySeat = 1
+			m.Callbreak.Width = m.Width
+			m.Callbreak.Height = m.Height
+			m.State = StateCallbreak
+			return m, pollCmd(msg.code)
 		} else {
 			m.CursorR = 1
 			m.CursorC = 1
