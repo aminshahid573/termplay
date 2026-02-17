@@ -12,7 +12,14 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/log"
+	"os"
 )
+
+func init() {
+	f, _ := os.OpenFile("debug.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	log.SetOutput(f)
+}
 
 // Messages
 type roomUpdateMsg db.Room
@@ -586,6 +593,12 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 
 	case "enter", " ":
+		log.Info("Key pressed", "key", msg.String())
+		log.Info("Turn check", "mySide", m.MySide, "turn", m.Game.Turn, "isMyTurn", isMyTurn)
+		if !isMyTurn {
+			return m, nil
+		}
+
 		// Chess Move Logic
 		if m.ChessSelected {
 			// If clicking same piece -> deselect
@@ -597,6 +610,7 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 
 			// If valid move
 			if m.ChessValidMoves[chess.Pos{Row: m.CursorR, Col: m.CursorC}] {
+				log.Info("Executing move", "from", m.ChessSelRow, m.ChessSelCol, "to", m.CursorR, m.CursorC)
 				// Execute Move
 				newState := chess.ApplyMove(m.Game.ChessState, chess.Pos{Row: m.ChessSelRow, Col: m.ChessSelCol}, chess.Pos{Row: m.CursorR, Col: m.CursorC}, "Q")
 
@@ -605,9 +619,14 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.ChessValidMoves = make(map[chess.Pos]bool)
 
 				return m, func() tea.Msg {
-					db.UpdateChessState(m.RoomCode, newState)
+					err := db.UpdateChessState(m.RoomCode, newState)
+					if err != nil {
+						log.Error("UpdateChessState failed", "err", err)
+					}
 					return nil
 				}
+			} else {
+				log.Info("Invalid move attempted", "target", m.CursorR, m.CursorC)
 			}
 
 			// If clicking another friendly piece -> select that instead
@@ -617,12 +636,14 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 				isWhite := p.IsWhite
 				myColorWhite := (m.MySide == "X")
 				if isWhite == myColorWhite {
+					log.Info("Switching selection", "to", m.CursorR, m.CursorC)
 					// Select this one
 					m.ChessSelected = true
 					m.ChessSelRow = m.CursorR
 					m.ChessSelCol = m.CursorC
 					// Calc moves
 					m.ChessValidMoves = chess.GetLegalMoves(m.Game.ChessState, m.CursorR, m.CursorC)
+					log.Info("Legal moves calculated", "count", len(m.ChessValidMoves))
 					return m, nil
 				}
 			}
@@ -639,11 +660,17 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 				isWhite := p.IsWhite
 				myColorWhite := (m.MySide == "X")
 				if isWhite == myColorWhite {
+					log.Info("Selected piece", "row", m.CursorR, "col", m.CursorC)
 					m.ChessSelected = true
 					m.ChessSelRow = m.CursorR
 					m.ChessSelCol = m.CursorC
 					m.ChessValidMoves = chess.GetLegalMoves(m.Game.ChessState, m.CursorR, m.CursorC)
+					log.Info("Legal moves calculated", "count", len(m.ChessValidMoves))
+				} else {
+					log.Info("Clicked opponent piece", "isWhite", isWhite, "myColorWhite", myColorWhite)
 				}
+			} else {
+				log.Info("Clicked empty square")
 			}
 		}
 	}
