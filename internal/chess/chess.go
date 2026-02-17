@@ -1,6 +1,9 @@
 package chess
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"fmt"
+)
 
 type Piece struct {
 	Type     string `json:"type"` // "K", "Q", "R", "B", "N", "P" or ""
@@ -485,7 +488,8 @@ func ApplyMove(state GameState, from, to Pos, promotionType string) GameState {
 	}
 
 	// 3-fold repetition
-	key := fmt.Sprintf("%v-%s-%v", state.Board, state.Turn, state.EnPassantTarget)
+	raw := fmt.Sprintf("%v-%s-%v", state.Board, state.Turn, state.EnPassantTarget)
+	key := fmt.Sprintf("%x", sha256.Sum256([]byte(raw)))
 	if state.History == nil {
 		state.History = make(map[string]int)
 	}

@@ -622,6 +622,7 @@ func updateChessInput(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 					err := db.UpdateChessState(m.RoomCode, newState)
 					if err != nil {
 						log.Error("UpdateChessState failed", "err", err)
+						return errMsg(fmt.Errorf("move failed: %v", err))
 					}
 					return nil
 				}
