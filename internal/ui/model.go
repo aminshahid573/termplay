@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"strings"
-	"sync"
 	"github.com/aminshahid573/termplay/internal/chess"
 	"github.com/aminshahid573/termplay/internal/db"
 	"github.com/aminshahid573/termplay/internal/snake"
+	"strings"
+	"sync"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -72,7 +72,6 @@ type Model struct {
 	ChessSelRow     int
 	ChessSelCol     int
 	ChessValidMoves map[chess.Pos]bool
-	ChessIsBlocked  bool
 	UseNerdFont     bool
 
 	// Snake State

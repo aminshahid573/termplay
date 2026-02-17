@@ -434,9 +434,7 @@ func renderChessGame(m Model) string {
 			isValidMove := m.ChessValidMoves[chess.Pos{Row: br, Col: bc}]
 			isCapture := isValidMove && !m.Game.ChessState.Board[br][bc].IsEmpty()
 
-			if isSelected && m.ChessIsBlocked {
-				bg = styles.ChessBlocked
-			} else if isSelected {
+			if isSelected {
 				bg = styles.ChessSelected
 			} else if isCapture {
 				bg = styles.ChessCapture
@@ -502,42 +500,47 @@ func renderChessGame(m Model) string {
 
 	// Status
 	var statusText string
+	var statusColor lipgloss.Color = lipgloss.Color("#CCCCCC")
+	isBold := false
+
 	if m.Game.Status == "waiting" {
 		statusText = "Opponent disconnected. Waiting..."
 	} else if m.Game.Status == "finished" {
-		res := "DRAW"
-		if m.Game.Winner != "" {
-			res = m.Game.Winner + " WINS!"
+		isBold = true
+		statusColor = styles.ChessCapture
+		if m.Game.Winner == "Draw" {
+			statusText = "STALEMATE - DRAW!"
+		} else if m.Game.Winner != "" {
+			statusText = "CHECKMATE! " + strings.ToUpper(m.Game.Winner) + " WINS!"
+		} else {
+			statusText = "GAME OVER"
 		}
-		statusText = res
 	} else {
-		isMyTurn := false
-		if m.MySide == "X" && m.Game.Turn == "White" {
-			isMyTurn = true
-		} else if m.MySide == "O" && m.Game.Turn == "Black" {
-			isMyTurn = true
+		isMyTurn := (m.MySide == "X" && m.Game.Turn == "White") || (m.MySide == "O" && m.Game.Turn == "Black")
+		inCheck := chess.IsInCheck(m.Game.ChessState.Board, m.Game.Turn == "White")
+
+		if inCheck {
+			isBold = true
+			statusColor = styles.ChessCapture
+			statusText = "CHECK! "
 		}
 
 		if m.MySide == "Spectator" {
-			statusText = "[SPECTATING]"
+			statusText += "[SPECTATING]"
 		} else if isMyTurn {
-			statusText = "Your turn"
+			statusText += "Your turn"
 		} else {
 			opponentName := m.Game.PlayerOName
 			if m.MySide == "O" {
 				opponentName = m.Game.PlayerXName
 			}
-			statusText = opponentName + "'s turn"
+			statusText += opponentName + "'s turn"
 		}
 	}
 
-	statusColor := lipgloss.Color("#CCCCCC")
-	if m.ChessIsBlocked {
-		statusColor = styles.ChessBlocked
-	}
 	status := lipgloss.NewStyle().
 		Foreground(statusColor).
-		Bold(m.ChessIsBlocked).
+		Bold(isBold).
 		Render(statusText)
 
 	content := lipgloss.JoinVertical(lipgloss.Center,
