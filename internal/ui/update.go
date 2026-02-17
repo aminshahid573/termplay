@@ -116,10 +116,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.State == StateCallbreak {
-			// Sync State
-			cb := m.Callbreak
-			cb.ApplyState(m.CBRoom.GameState)
-			m.Callbreak = cb
+			// Sync State ONLY if not Host
+			// Host is the source of truth for game state.
+			if !m.Callbreak.IsHost {
+				cb := m.Callbreak
+				cb.ApplyState(m.CBRoom.GameState)
+				m.Callbreak = cb
+			}
 
 			// Rebuild names from DB state
 			for pid, seatIdx := range m.CBRoom.PlayerSeats {
@@ -300,6 +303,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// We should probably debounce this or only do it on state changes
 				// For now, simple approach:
 				db.UpdateCBGameState(m.RoomCode, m.Callbreak.ToState())
+			}
+
+			// Handle Menu Selection (Join Room)
+			if m.Callbreak.Phase == callbreak.PhaseMenu {
+				if keyMsg, ok := msg.(tea.KeyMsg); ok {
+					if keyMsg.String() == "enter" || keyMsg.String() == " " {
+						if m.Callbreak.MenuSelection == 2 {
+							// Join Room Selected -> Go to Code Input
+							m.State = StateInputCode
+							m.TextInput.Placeholder = "4-Digit Code"
+							m.TextInput.SetValue("")
+							m.TextInput.Focus()
+							return m, textinput.Blink
+						}
+					}
+				}
 			}
 
 			// If multiplayer was selected and player count confirmed (Local AI game setup)

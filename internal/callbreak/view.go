@@ -649,7 +649,7 @@ func (m Model) viewMenu() string {
 	mid := joinRows(rulesBox, keysBox, 2)
 
 	// Mode selection
-	modeItems := []string{"Play vs AI", "Multiplayer"}
+	modeItems := []string{"Play vs AI", "Create Room", "Join Room"}
 	var modeRendered []string
 	for i, item := range modeItems {
 		if i == m.MenuSelection {

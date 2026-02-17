@@ -12,7 +12,7 @@ var (
 	DBURL        = ""
 	CredPath     = ""
 	SyncInterval = 500 * time.Millisecond
-	Host         = "localhost"
+	Host         = "0.0.0.0"
 	Port         = 2324
 )
 

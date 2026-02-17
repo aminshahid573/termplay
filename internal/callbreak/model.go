@@ -74,7 +74,7 @@ type Model struct {
 	Height        int
 
 	// Menu / mode selection
-	MenuSelection int     // 0 = AI, 1 = Multiplayer
+	MenuSelection int     // 0 = AI, 1 = Create Room, 2 = Join Room
 	HumanPlayers  int     // Number of human players (1=AI only, 2-4=multiplayer)
 	IsAI          [4]bool // Which seats are AI
 
@@ -180,7 +180,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.MenuSelection--
 			}
 		case "down", "j":
-			if m.MenuSelection < 1 {
+			if m.MenuSelection < 2 {
 				m.MenuSelection++
 			}
 		case "enter", " ":
@@ -190,11 +190,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.HumanPlayers = 1
 				m.IsAI = [4]bool{false, true, true, true}
 				m.StartGame()
-			} else {
-				// Multiplayer — show player count selection
+			} else if m.MenuSelection == 1 {
+				// Create Room — show player count selection
 				m.Phase = PhasePlayerSelect
 				m.HumanPlayers = 2
 				m.Message = "Choose number of human players (↑/↓), then ENTER"
+			} else {
+				// Join Room — parent UI handles this transition
+				m.Message = "Joining room..."
 			}
 		}
 
